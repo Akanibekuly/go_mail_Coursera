@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,26 +10,26 @@ import (
 )
 
 func main() {
-	out := os.Stdout
-	if !(len(os.Args) == 2 || len(os.Args) == 3) {
-		panic("usage go run main.go . [-f]")
-	}
-	path := os.Args[1]
-	printFiles := len(os.Args) == 3 && os.Args[2] == "-f"
-	err := dirTree(out, path, printFiles)
-	if err != nil {
-		panic(err.Error())
-	}
+	// out := os.Stdout
+	// if !(len(os.Args) == 2 || len(os.Args) == 3) {
+	// 	panic("usage go run main.go . [-f]")
+	// }
+	// path := os.Args[1]
+	// printFiles := len(os.Args) == 3 && os.Args[2] == "-f"
+	// err := dirTree(out, path, printFiles)
+	// if err != nil {
+	// 	panic(err.Error())
+	// }
 }
 
-func dirTree(out *os.File, path string, printFiles bool) error {
+func dirTree(out *bytes.Buffer, path string, printFiles bool) error {
 	if printFiles {
 		return WalkAll(out, path, "")
 	}
 	return WalkDir(out, path, "")
 }
 
-func WalkDir(out *os.File, path string, sufix string) error {
+func WalkDir(out *bytes.Buffer, path string, sufix string) error {
 	dirname := path + string(filepath.Separator)
 	d, err := os.Open(dirname)
 	if err != nil {
@@ -67,7 +68,7 @@ func WalkDir(out *os.File, path string, sufix string) error {
 	return nil
 }
 
-func WalkAll(out *os.File, path string, sufix string) error {
+func WalkAll(out *bytes.Buffer, path string, sufix string) error {
 	dirname := path + string(filepath.Separator)
 	d, err := os.Open(dirname)
 	if err != nil {
@@ -89,9 +90,9 @@ func WalkAll(out *os.File, path string, sufix string) error {
 			prefix = "└───"
 		}
 
-		fmt.Fprint(out, sufix+prefix+fix.Name()+" ")
+		fmt.Fprint(out, sufix+prefix+fix.Name())
 		if !fix.IsDir() {
-			fmt.Fprint(out, bytesToString(fix.Size()))
+			fmt.Fprint(out, " "+bytesToString(fix.Size()))
 		}
 		fmt.Fprintln(out)
 		if fix.IsDir() {
