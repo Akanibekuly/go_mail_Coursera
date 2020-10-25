@@ -4,9 +4,10 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
 )
 
-func uniq(input io.Reader, output io.Writer) error {
+func Uniq(input io.Reader, output io.Writer) error {
 	in := bufio.NewScanner(input)
 	var prev string
 	for in.Scan() {
@@ -25,5 +26,8 @@ func uniq(input io.Reader, output io.Writer) error {
 }
 
 func main() {
-
+	err := Uniq(os.Stdin, os.Stdout)
+	if err != nil {
+		panic(err.Error())
+	}
 }
