@@ -1,29 +1,29 @@
-├───project
+├───project 
 │	├───file.txt (19b)
 │	└───gopher.png (70372b)
-├───static
-│	├───a_lorem
+├───static 
+│	├───a_lorem 
 │	│	├───dolor.txt (empty)
 │	│	├───gopher.png (70372b)
-│	│	└───ipsum
+│	│	└───ipsum 
 │	│		└───gopher.png (70372b)
-│	├───css
+│	├───css 
 │	│	└───body.css (28b)
 │	├───empty.txt (empty)
-│	├───html
+│	├───html 
 │	│	└───index.html (57b)
-│	├───js
+│	├───js 
 │	│	└───site.js (10b)
-│	└───z_lorem
+│	└───z_lorem 
 │		├───dolor.txt (empty)
 │		├───gopher.png (70372b)
-│		└───ipsum
+│		└───ipsum 
 │			└───gopher.png (70372b)
-├───zline
+├───zline 
 │	├───empty.txt (empty)
-│	└───lorem
+│	└───lorem 
 │		├───dolor.txt (empty)
 │		├───gopher.png (70372b)
-│		└───ipsum
+│		└───ipsum 
 │			└───gopher.png (70372b)
 └───zzfile.txt (empty)
