@@ -17,7 +17,6 @@ func ExecutePipeline(jobs ...job) {
 		wg.Add(1)
 		go WorkerPipeline(wg, jobFunc, in, out)
 		in = out
-		// runtime.Gosched()
 	}
 	wg.Wait()
 
@@ -73,16 +72,16 @@ func MultiHash(in, out chan interface{}) {
 }
 
 // WorkerMultiHash is
-func WorkerMultiHash(wg *sync.WaitGroup, h interface{}, ch chan interface{}) {
+func WorkerMultiHash(wg *sync.WaitGroup, data interface{}, ch chan interface{}) {
 	defer wg.Done()
-	wgInternal := &sync.WaitGroup{}
+	wgTemp := &sync.WaitGroup{}
 	hashArray := make([]string, 6)
 	for i := 0; i < 6; i++ {
-		wgInternal.Add(1)
-		data := fmt.Sprintf("%v%v", i, h)
-		go calculateMultiHash(wgInternal, i, data, hashArray)
+		wgTemp.Add(1)
+		data := fmt.Sprintf("%v%v", i, data)
+		go calculateMultiHash(wgTemp, i, data, hashArray)
 	}
-	wgInternal.Wait()
+	wgTemp.Wait()
 	multiHash := strings.Join(hashArray, "")
 	ch <- multiHash
 }
@@ -95,11 +94,11 @@ func calculateMultiHash(wg *sync.WaitGroup, id int, data string, arr []string) {
 
 // CombineResults is
 func CombineResults(in, out chan interface{}) {
-	var hashArray []string
+	var arr []string
 	for i := range in {
-		hashArray = append(hashArray, i.(string))
+		arr = append(arr, i.(string))
 	}
-	sort.Strings(hashArray)
-	combineR := strings.Join(hashArray, "_")
+	sort.Strings(arr)
+	combineR := strings.Join(arr, "_")
 	out <- combineR
 }
