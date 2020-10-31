@@ -38,6 +38,7 @@ func TestByIlia(t *testing.T) {
 			for val := range in {
 				fmt.Println("collected", val)
 				atomic.AddUint32(&recieved, val.(uint32))
+				fmt.Println(recieved)
 			}
 		}),
 	}
