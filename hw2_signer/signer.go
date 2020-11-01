@@ -92,13 +92,13 @@ func calculateMultiHash(wg *sync.WaitGroup, id int, data string, arr []string) {
 	arr[id] = crc32Hash
 }
 
-// CombineResults is
+// CombineResults is collect all hashes, joined them and send back
 func CombineResults(in, out chan interface{}) {
 	var arr []string
 	for i := range in {
 		arr = append(arr, i.(string))
 	}
 	sort.Strings(arr)
-	combineR := strings.Join(arr, "_")
-	out <- combineR
+	combined := strings.Join(arr, "_")
+	out <- combined
 }
