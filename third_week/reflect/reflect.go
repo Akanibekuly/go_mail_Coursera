@@ -20,7 +20,7 @@ func PrintReflect(u interface{}) error {
 		valueField := val.Field(i)
 		typeField := val.Type().Field(i)
 
-		fmt.Printf("\tname=%v, type=%v, value=%v, tag=`%v`\n", 
+		fmt.Printf("\tname=%v, type=%v, value=%v, tag=`%v`\n",
 			typeField.Name,
 			typeField.Type.Kind(),
 			valueField,
@@ -31,7 +31,7 @@ func PrintReflect(u interface{}) error {
 }
 
 func main() {
-	u := User{
+	u := &User{
 		ID:       42,
 		RealName: "Akanibekuly",
 		Flags:    32,
