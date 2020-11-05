@@ -1,0 +1,5 @@
+goos: darwin
+goarch: amd64
+BenchmarkToJSON-4   	 4725291	       232 ns/op	  86.19 MB/s	      32 B/op	       1 allocs/op
+PASS
+ok  	command-line-arguments	1.699s

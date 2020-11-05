@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/json"
+	"strconv"
 	"testing"
 )
 
@@ -11,7 +11,7 @@ type testStruct struct {
 }
 
 func (t *testStruct) ToJSON() ([]byte, error) {
-	return json.Marshal(t)
+	return []byte(`{"X": ` + strconv.Itoa(t.X) + `, "Y": "` + t.Y + `"}`), nil
 }
 
 func BenchmarkToJSON(b *testing.B) {
