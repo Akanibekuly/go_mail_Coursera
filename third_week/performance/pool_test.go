@@ -42,6 +42,7 @@ func BenchmarkAllocNew(b *testing.B) {
 		for pb.Next() {
 			data := bytes.NewBuffer(make([]byte, 0, 64))
 			_ = json.NewEncoder(data).Encode(Pages)
+			// fmt.Println(Pages)
 		}
 	})
 }

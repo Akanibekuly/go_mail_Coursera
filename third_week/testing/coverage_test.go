@@ -28,15 +28,7 @@ func TestGetUser(t *testing.T) {
 			t.Errorf("[%d] unexpected error %s", caseNum, err)
 		}
 		if !reflect.DeepEqual(u, item.User) {
-			t.Errorf("[%d] wrong results: got %+v, expected %+v",
-				caseNum, u, item.User)
+			t.Errorf("[%d] wrong results: got %+v, expected %+v", caseNum, u, item.User)
 		}
 	}
-
 }
-
-/*
-	go test -coverprofile=cover.out
-	go tool cover -html=cover.out -o cover.html
-
-*/
