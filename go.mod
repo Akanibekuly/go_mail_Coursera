@@ -4,5 +4,7 @@ go 1.15
 
 require (
 	github.com/mailru/easyjson v0.7.6
+	github.com/technoweenie/multipartstreamer v1.0.1 // indirect
 	golang.org/x/tools v0.0.0-20201105001634-bc3cf281b174 // indirect
+	gopkg.in/telegram-bot-api.v4 v4.6.4
 )
