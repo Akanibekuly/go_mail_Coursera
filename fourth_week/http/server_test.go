@@ -118,4 +118,4 @@ func TestCartCheckout(t *testing.T) {
 		}
 	}
 	ts.Close()
-}
+} 

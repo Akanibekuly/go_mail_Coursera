@@ -58,6 +58,7 @@ func CountDecoder() {
 			}
 		}
 	}
+	fmt.Println(logins)
 }
 
 func main() {

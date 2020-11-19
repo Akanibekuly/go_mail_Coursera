@@ -24,7 +24,7 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"status": 500, "err": "db_error"}`)
 	}
 }
-
+ 
 func TestGetUser(t *testing.T) {
 	cases := []TestCase{
 		TestCase{
