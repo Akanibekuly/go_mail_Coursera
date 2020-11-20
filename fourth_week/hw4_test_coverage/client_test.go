@@ -1,11 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -17,18 +21,22 @@ type TestCase struct {
 }
 
 type MyUser struct {
-	Id        int    `xml: "id"`
-	Name      string `xml: "-"`
-	FirstName string `xml: "first_name"`
-	LastName  string `xml: "last_name"`
-	Age       int    `xml: "age"`
-	About     string `xml: "about"`
-	Gender    string `xml: "gender"`
+	Id        int    `xml:"id" json:"id"`
+	Name      string `xml:"-" json:"-"`
+	FirstName string `xml:"first_name" json:"-"`
+	LastName  string `xml:"last_name" json:"-"`
+	Age       int    `xml:"age" json:"age"`
+	About     string `xml:"about" json:"about"`
+	Gender    string `xml:"gender" json:"gender"`
 }
 
 type SearchServer struct {
 	pathToFile string
 }
+
+const (
+	testToken = "1234567"
+)
 
 // func main() {
 // 	result, err := getUsersFromFile("dataset.xml")
@@ -159,3 +167,85 @@ func getUsersFromFile(pathToFile string) ([]MyUser, error) {
 	}
 	return result, nil
 }
+
+// SearchServerHandler Обработчик сервера
+func SearchServerHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// проверяем токен на наличие
+	token := r.Header.Get("AccesToken")
+	if token == "" || token != testToken {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	// берем данные для поиска и обробатывем ошибки
+	searchRequest, err := getValidInput(r)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, fmt.Sprintf(`"StatusCode": 400, "Error": "%s"`, err.Error()))
+		return
+	}
+
+	// создаем своего сервера поиска
+	searchServer := SearchServer{"./dataset.xml"}
+
+	users, err := searchServer.GetUsers(searchRequest)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		io.WriteString(w, fmt.Sprintf(`"StatusCode": 500, "Error": "%s"`, err.Error()))
+		return
+	}
+
+	usersJSON, err := json.Marshal(users)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		io.WriteString(w, fmt.Sprintf(`"StatusCode: 500", "Error": "Invalid data for json encoding"`))
+		return
+	}
+
+	io.WriteString(w, string(usersJSON))
+}
+
+// Обпработка правильности данных для поиска
+func getValidInput(r *http.Request) (SearchRequest, error) {
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil {
+		return SearchRequest{}, errors.New("limit")
+	}
+
+	offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
+	if err != nil {
+		return SearchRequest{}, errors.New("offset")
+	}
+
+	orderBy, err := strconv.Atoi(r.URL.Query().Get("order_by"))
+	if err != nil || orderBy < -1 || orderBy > 1 {
+		return SearchRequest{}, errors.New("order_by")
+	}
+
+	orderField := r.URL.Query().Get("order_field")
+	if !isValidOrderField(orderField) {
+		return SearchRequest{}, errors.New("ErrorBadOrderField")
+	}
+	query := r.URL.Query().Get("query")
+
+	return SearchRequest{
+		Limit:      limit,
+		Offset:     offset,
+		OrderBy:    orderBy,
+		Query:      query,
+		OrderField: orderField,
+	}, nil
+}
+
+// Обработка правильности полей для поиска
+func isValidOrderField(orderField string) bool {
+	if orderField == "Id" || orderField == "Name" || orderField == "Age" {
+		return true
+	}
+	return false
+}
+
+
+
