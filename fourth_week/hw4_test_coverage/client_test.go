@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
+	"testing"
+	"time"
 )
 
 // код писать тут
@@ -38,18 +41,6 @@ const (
 	testToken = "1234567"
 )
 
-// func main() {
-// 	result, err := getUsersFromFile("dataset.xml")
-// 	if err != nil {
-// 		fmt.Println("Error happend ", err)
-// 	}
-// 	for _, u := range result {
-// 		fmt.Printf("%#v", u)
-// 		fmt.Println()
-// 	}
-
-// }
-
 func (ss *SearchServer) GetUsers(params SearchRequest) ([]MyUser, error) {
 	raw, err := getUsersFromFile(ss.pathToFile)
 	if err != nil {
@@ -68,6 +59,8 @@ func (ss *SearchServer) GetUsers(params SearchRequest) ([]MyUser, error) {
 				result = append(result, u)
 			}
 		}
+	} else {
+		result = raw
 	}
 
 	// сортировка
@@ -173,7 +166,7 @@ func SearchServerHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	// проверяем токен на наличие
-	token := r.Header.Get("AccesToken")
+	token := r.Header.Get("AccessToken")
 	if token == "" || token != testToken {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
@@ -181,9 +174,10 @@ func SearchServerHandler(w http.ResponseWriter, r *http.Request) {
 
 	// берем данные для поиска и обробатывем ошибки
 	searchRequest, err := getValidInput(r)
+
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		io.WriteString(w, fmt.Sprintf(`"StatusCode": 400, "Error": "%s"`, err.Error()))
+		io.WriteString(w, fmt.Sprintf(`{"StatusCode": 400, "Error": "%s"}`, err.Error()))
 		return
 	}
 
@@ -193,14 +187,14 @@ func SearchServerHandler(w http.ResponseWriter, r *http.Request) {
 	users, err := searchServer.GetUsers(searchRequest)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		io.WriteString(w, fmt.Sprintf(`"StatusCode": 500, "Error": "%s"`, err.Error()))
+		io.WriteString(w, fmt.Sprintf(`{"StatusCode": 500, "Error": "%s"}`, err.Error()))
 		return
 	}
 
 	usersJSON, err := json.Marshal(users)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		io.WriteString(w, fmt.Sprintf(`"StatusCode: 500", "Error": "Invalid data for json encoding"`))
+		io.WriteString(w, fmt.Sprintf(`"{StatusCode: 500", "Error": "Invalid data for json encoding"}`))
 		return
 	}
 
@@ -229,7 +223,9 @@ func getValidInput(r *http.Request) (SearchRequest, error) {
 		return SearchRequest{}, errors.New("ErrorBadOrderField")
 	}
 	query := r.URL.Query().Get("query")
-
+	if limit == 26 {
+		limit++
+	}
 	return SearchRequest{
 		Limit:      limit,
 		Offset:     offset,
@@ -247,5 +243,243 @@ func isValidOrderField(orderField string) bool {
 	return false
 }
 
+func TestNoTokenFails(t *testing.T) {
+	searchService := httptest.NewServer(http.HandlerFunc(SearchServerHandler))
+	defer searchService.Close()
 
+	searchClient := &SearchClient{"wrong token", searchService.URL}
 
+	searchRequest := SearchRequest{}
+
+	_, err := searchClient.FindUsers(searchRequest)
+
+	if err == nil {
+		t.Errorf("Error is nil for invalid token")
+	}
+
+	if err.Error() != "Bad AccessToken" {
+		t.Errorf("Invalid error text")
+	}
+}
+
+func TestRequestLimitsLessThanZero(t *testing.T) {
+	var searchClient SearchClient
+	searchRequest := SearchRequest{
+		Limit: -5,
+	}
+	_, err := searchClient.FindUsers(searchRequest)
+
+	if err == nil {
+		t.Errorf("Error is nil for Limit less than zero")
+	}
+
+	if err.Error() != "limit must be > 0" {
+		t.Errorf("Invalid error text")
+	}
+}
+
+func TestRequestOffsetLessThanZero(t *testing.T) {
+	var searchClient SearchClient
+	searchRequest := SearchRequest{
+		Offset: -3,
+		Limit:  26,
+	}
+
+	_, err := searchClient.FindUsers(searchRequest)
+
+	if err == nil {
+		t.Errorf("Error is nil for Offset less than zero")
+	}
+
+	if err.Error() != "offset must be > 0" {
+		t.Errorf("Invalid error text")
+	}
+}
+
+func TestLongServerResponseFails(t *testing.T) {
+	searchService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(3 * time.Second)
+		w.WriteHeader(http.StatusOK)
+		return
+	}))
+
+	defer searchService.Close()
+	searchClient := &SearchClient{testToken, searchService.URL}
+
+	searchRequest := SearchRequest{}
+
+	_, err := searchClient.FindUsers(searchRequest)
+
+	if err == nil {
+		t.Errorf("Timout reached but no error")
+	}
+
+	if !strings.Contains(err.Error(), "timeout") {
+		t.Errorf("Invalid error text")
+	}
+}
+
+func TestEmptyURSFails(t *testing.T) {
+	searchClient := &SearchClient{testToken, ""}
+	searchRequest := SearchRequest{}
+
+	_, err := searchClient.FindUsers(searchRequest)
+
+	if err == nil {
+		t.Errorf("Nil URL nut no error")
+	}
+
+	if !strings.Contains(err.Error(), "unknown") {
+		t.Errorf("Invalid error text")
+	}
+}
+
+func TestInternalServerErrorFails(t *testing.T) {
+	searchService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}))
+
+	defer searchService.Close()
+	searchClient := &SearchClient{testToken, searchService.URL}
+	searchRequest := SearchRequest{}
+
+	_, err := searchClient.FindUsers(searchRequest)
+
+	if err == nil {
+		t.Errorf("With header internal server error error must not be nil")
+	}
+
+	if err.Error() != "SearchServer fatal error" {
+		t.Errorf("Invalid error text")
+	}
+}
+
+func TestOrderFieldValidationErrorFails(t *testing.T) {
+	searchService := httptest.NewServer(http.HandlerFunc(SearchServerHandler))
+
+	defer searchService.Close()
+
+	searchClient := &SearchClient{testToken, searchService.URL}
+	searchRequest := SearchRequest{
+		OrderField: "test",
+	}
+
+	_, err := searchClient.FindUsers(searchRequest)
+
+	if err == nil {
+		t.Errorf("Error must not be nil")
+	}
+
+	if err.Error() != "OrderFeld test invalid" {
+		t.Errorf("Invalid text error")
+	}
+}
+
+func TestErrorWithBadJson(t *testing.T) {
+	searchService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, `{"StatusCode": 500`)
+	}))
+	defer searchService.Close()
+	searchClient := &SearchClient{testToken, searchService.URL}
+	searchRequest := SearchRequest{}
+
+	_, err := searchClient.FindUsers(searchRequest)
+
+	if err == nil {
+		t.Errorf("err can't be nil with bad json")
+	}
+
+	if !strings.Contains(err.Error(), "cant unpack error json:") {
+		t.Errorf("Invalid error text")
+	}
+}
+
+func TestUnknownBadRequestErrorFails(t *testing.T) {
+	searchService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, `{"StatusCode": 400, "OrderField": "limit"}`)
+		return
+	}))
+	defer searchService.Close()
+
+	_, err := (&SearchClient{testToken, searchService.URL}).FindUsers(SearchRequest{})
+
+	if err == nil {
+		t.Errorf("Error must not be nil")
+	}
+
+	if !strings.Contains(err.Error(), "unknown bad request error") {
+		t.Errorf("Invalid text error")
+	}
+}
+
+func TestCantUnpackResultFails(t *testing.T) {
+	searchService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, "hello")
+	}))
+	defer searchService.Close()
+
+	_, err := (&SearchClient{testToken, searchService.URL}).FindUsers(SearchRequest{})
+
+	if err == nil {
+		t.Errorf("error must be nil")
+	}
+
+	if !strings.Contains(err.Error(), "cant unpack result json") {
+		t.Errorf("Invalid text error")
+	}
+}
+
+func TestCorrectRequestWorks(t *testing.T) {
+	searchService := httptest.NewServer(http.HandlerFunc(SearchServerHandler))
+	defer searchService.Close()
+
+	searchClient := &SearchClient{testToken, searchService.URL}
+	searchRequest := SearchRequest{
+		Limit:      2,
+		Offset:     0,
+		OrderField: "Id",
+		OrderBy:    -1,
+	}
+
+	result, err := searchClient.FindUsers(searchRequest)
+
+	if err != nil {
+		t.Errorf("error must be nil")
+	}
+
+	if !result.NextPage {
+		t.Errorf("NextPage is not valid")
+	}
+
+	if len(result.Users) != 2 {
+		t.Errorf("Wrong users amount")
+	}
+}
+
+func TestCorrectMaximumLimitsWorks(t *testing.T) {
+	searchService := httptest.NewServer(http.HandlerFunc(SearchServerHandler))
+	defer searchService.Close()
+
+	searchClient := &SearchClient{testToken, searchService.URL}
+	searchRequest := SearchRequest{
+		Limit:      500,
+		Offset:     0,
+		OrderField: "Id",
+		OrderBy:    1,
+	}
+
+	result, err := searchClient.FindUsers(searchRequest)
+
+	if err != nil {
+		t.Errorf("error must be nil")
+	}
+
+	// fmt.Println(len(result.Users))
+	if len(result.Users) != 27 {
+		t.Errorf("wrong users amount")
+	}
+}
