@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/bradfitz/gomemcache/memcache"
 )
 
@@ -27,7 +28,7 @@ func main() {
 	fmt.Printf("mc value %#v\n", item)
 
 	memcacheClient.Delete(mKey)
-
+	//sdfvsdfbvsdbf
 	item, err = memcacheClient.Get(mKey)
 	if err != nil && err == memcache.ErrCacheMiss {
 		fmt.Println("record not found ")
