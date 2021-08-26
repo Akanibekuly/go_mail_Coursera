@@ -1,51 +1,46 @@
 package main
 
-	import (
-		"encoding/json"
-		"fmt"
-		"net/http"
-		"strconv"
-	)
-	
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+)
+
 // response that we return back
 type response struct {
 	Error    string      `json:"error"`
 	Response interface{} `json:"response,omitempty"`
 }
 
-
 func (in *ProfileParams) validator(r *http.Request) error {
-	
-	in.Login=r.FormValue(strings.ToLower("Login"))
-	if in.Login==""{
+
+	in.Login = r.FormValue(strings.ToLower("Login"))
+	if in.Login == "" {
 		return fmt.Errorf("login must me not empty")
 	}
-	
+
 	return nil
-	}
-	
+}
+
 func (in *CreateParams) validator(r *http.Request) error {
-	
-	in.Login=r.FormValue(strings.ToLower("Login"))
-	if in.Login==""{
+
+	in.Login = r.FormValue(strings.ToLower("Login"))
+	if in.Login == "" {
 		return fmt.Errorf("login must me not empty")
 	}
-	
-	in.Name=r.FormValue(strings.ToLower("Name"))
-	
-	
-	in.Status=r.FormValue("user")
-	
-	
-	in.Age=r.FormValue(strings.ToLower("Age"))
-	
-	
+
+	in.Name = r.FormValue(strings.ToLower("Name"))
+
+	in.Status = r.FormValue("user")
+
+	in.Age = r.FormValue(strings.ToLower("Age"))
+
 	return nil
-	}
-	
+}
+
 func (srv *ProfileParams) handleProfile(w http.ResponseWriter, r *http.Request) {
-		
-	
+
 	p := ProfileParams{}
 	err := p.validator(r)
 	if err != nil {
@@ -71,7 +66,7 @@ func (srv *ProfileParams) handleProfile(w http.ResponseWriter, r *http.Request) 
 }
 
 func (srv *CreateParams) handleCreate(w http.ResponseWriter, r *http.Request) {
-		
+
 	//TODO authorization
 	if key := r.Header.Get("X-Auth"); key != "100500" {
 		w.WriteHeader(http.StatusForbidden)
@@ -82,8 +77,7 @@ func (srv *CreateParams) handleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	
-	
+
 	//TODO method validation
 	if r.Method != "POST" {
 		w.WriteHeader(http.StatusNotAcceptable)
@@ -94,7 +88,7 @@ func (srv *CreateParams) handleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	
+
 	p := CreateParams{}
 	err := p.validator(r)
 	if err != nil {
@@ -120,26 +114,23 @@ func (srv *CreateParams) handleCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (in *OtherCreateParams) validator(r *http.Request) error {
-	
-	in.Username=r.FormValue(strings.ToLower("Username"))
-	if in.Username==""{
+
+	in.Username = r.FormValue(strings.ToLower("Username"))
+	if in.Username == "" {
 		return fmt.Errorf("login must me not empty")
 	}
-	
-	in.Name=r.FormValue(strings.ToLower("Name"))
-	
-	
-	in.Class=r.FormValue("warrior")
-	
-	
-	in.Level=r.FormValue(strings.ToLower("Level"))
-	
-	
+
+	in.Name = r.FormValue(strings.ToLower("Name"))
+
+	in.Class = r.FormValue("warrior")
+
+	in.Level = r.FormValue(strings.ToLower("Level"))
+
 	return nil
-	}
-	
+}
+
 func (srv *OtherCreateParams) handleCreate(w http.ResponseWriter, r *http.Request) {
-		
+
 	//TODO authorization
 	if key := r.Header.Get("X-Auth"); key != "100500" {
 		w.WriteHeader(http.StatusForbidden)
@@ -150,8 +141,7 @@ func (srv *OtherCreateParams) handleCreate(w http.ResponseWriter, r *http.Reques
 		}
 		return
 	}
-	
-	
+
 	//TODO method validation
 	if r.Method != "POST" {
 		w.WriteHeader(http.StatusNotAcceptable)
@@ -162,7 +152,7 @@ func (srv *OtherCreateParams) handleCreate(w http.ResponseWriter, r *http.Reques
 		}
 		return
 	}
-	
+
 	p := OtherCreateParams{}
 	err := p.validator(r)
 	if err != nil {
@@ -187,41 +177,39 @@ func (srv *OtherCreateParams) handleCreate(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-	// MyApi server router
-	func (srv *MyApi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-			
-			case "/user/profile":
-				 srv.handleProfile(w, r)
-			
-			case "/user/create":
-				 srv.handleCreate(w, r)
-			
-		 	default:
-		 		w.WriteHeader(http.StatusNotFound)
-		 		if err := json.NewEncoder(w).Encode(response{
-		 			Error: "unknown method",
-		 		}); err != nil {
-		 			panic(err)
-		 		}
-		 	}
+// MyApi server router
+func (srv *MyApi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+
+	case "/user/profile":
+		srv.handleProfile(w, r)
+
+	case "/user/create":
+		srv.handleCreate(w, r)
+
+	default:
+		w.WriteHeader(http.StatusNotFound)
+		if err := json.NewEncoder(w).Encode(response{
+			Error: "unknown method",
+		}); err != nil {
+			panic(err)
+		}
 	}
-	
-	// OtherApi server router
-	func (srv *OtherApi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-			
-			case "/user/create":
-				 srv.handleCreate(w, r)
-			
-		 	default:
-		 		w.WriteHeader(http.StatusNotFound)
-		 		if err := json.NewEncoder(w).Encode(response{
-		 			Error: "unknown method",
-		 		}); err != nil {
-		 			panic(err)
-		 		}
-		 	}
+}
+
+// OtherApi server router
+func (srv *OtherApi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+
+	case "/user/create":
+		srv.handleCreate(w, r)
+
+	default:
+		w.WriteHeader(http.StatusNotFound)
+		if err := json.NewEncoder(w).Encode(response{
+			Error: "unknown method",
+		}); err != nil {
+			panic(err)
+		}
 	}
-	
-	
+}
