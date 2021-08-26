@@ -14,6 +14,7 @@ import (
 
 // структура для обработки и сохранения данных для обработчиков
 type wrapper struct {
+	Srv    string
 	In     string
 	Name   string
 	Url    string
@@ -62,6 +63,7 @@ func main() {
 		"fmt"
 		"net/http"
 		"strconv"
+		"strings"
 	)
 	
 // response that we return back
@@ -107,6 +109,8 @@ type response struct {`)
 				// fmt.Println(w)
 				temp := fnc.Recv.List[0].Type.(*ast.StarExpr).X.(*ast.Ident).Name
 				servers.Serve[temp] = append(servers.Serve[temp], w)
+				w.Srv = temp
+				fmt.Println("wrapper is", w)
 				handlerTpl.Execute(out, w)
 			}
 		}
@@ -165,6 +169,7 @@ type response struct {`)
 									t.Enum = vArr[1]
 								}
 								if vArr[0] == "default" {
+									fmt.Println("DEFAULT is", vArr[1])
 									t.Default = vArr[1]
 								}
 								if vArr[0] == "min" {
@@ -180,7 +185,6 @@ type response struct {`)
 						}
 						v.Params = append(v.Params, p)
 					}
-					fmt.Println(v)
 					err := validatorTpl.Execute(out, v)
 					fmt.Println("DEBUG template error %s", err)
 				}
@@ -198,7 +202,7 @@ type response struct {`)
 
 var (
 	handlerTpl = template.Must(template.New("handlerTpl").Parse(`
-func (srv *{{.In}}) handle{{.Name}}(w http.ResponseWriter, r *http.Request) {
+func (srv *{{.Srv}}) handle{{.Name}}(w http.ResponseWriter, r *http.Request) {
 		{{if .Auth }}
 	//TODO authorization
 	if key := r.Header.Get("X-Auth"); key != "100500" {
@@ -236,6 +240,18 @@ func (srv *{{.In}}) handle{{.Name}}(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := srv.{{.Name}}(r.Context(), p)
 	if err != nil {
+		//type assertions
+		v, ok := err.(ApiError)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+		} else {
+			w.WriteHeader(v.HTTPStatus)
+		}
+		if newErr := json.NewEncoder(w).Encode(response{
+			Error: err.Error(),
+		}); newErr != nil {
+			panic(err)
+		}
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -248,23 +264,52 @@ func (srv *{{.In}}) handle{{.Name}}(w http.ResponseWriter, r *http.Request) {
 }
 `))
 
-	validatorTpl = template.Must(template.New("handlerTpl").Parse(`
+	validatorTpl = template.Must(template.New("validatorrTpl").Parse(`
 func (in *{{.Name}}) validator(r *http.Request) error {
 	{{range .Params}}
-	{{if ne .Tags.Default ""}}in.{{.Name}}=r.FormValue("{{.Tags.Default}}"){{else}}in.{{.Name}}=r.FormValue(strings.ToLower("{{.Name}}")){{end}}
-	{{if .Tags.Required}}if in.{{.Name}}==""{
-		return fmt.Errorf("login must me not empty")
+		{{if eq .Type "string"}}
+		{{if ne .Tags.Default ""}}
+		in.{{.Name}}="{{.Tags.Default}}"
+		if r.FormValue(strings.ToLower("{{.Name}}"))!=""{
+			in.{{.Name}}=r.FormValue(strings.ToLower("{{.Name}}"))
+		}
+		{{else if ne .Tags.Paramname ""}}
+		in.{{.Name}}=r.FormValue("{{.Tags.Paramname}}")
+		{{else}}
+		in.{{.Name}}=r.FormValue(strings.ToLower("{{.Name}}"))
+	{{end}}
+	{{else}}
+	temp, err := strconv.Atoi(r.FormValue(strings.ToLower("{{.Name}}")))
+	in.{{.Name}}=temp
+	if err != nil {
+		return fmt.Errorf(strings.ToLower("{{.Name}}")+" must be int")
 	}{{end}}
+	{{if .Tags.Required}}
+	if in.{{.Name}}==""{
+		return fmt.Errorf(strings.ToLower("{{.Name}}")+" must me not empty")
+	}{{end}}
+	
 	{{if ne .Tags.Min ""}}
 		{{if eq .Type "string"}}
-			if len(in.{{.Name}})<{{.Tags.Min}}{
-				return fmt.Errorf("login len must be >= {{.Tags.Min}}")
-			}
-		{{else}}
-			if in.Name
-		{{end}}
-	{{end}}
-	{{end}}
+	if len(in.{{.Name}})<{{.Tags.Min}}{
+		return fmt.Errorf(strings.ToLower("{{.Name}}")+" len must be >= {{.Tags.Min}}")
+	}{{else}}if in.{{.Name}}<{{.Tags.Min}}{
+			return fmt.Errorf(strings.ToLower("{{.Name}}")+" must be >= {{.Tags.Min}}")
+		}{{end}}{{end}}
+	{{if ne .Tags.Enum ""}}tArr:=strings.Split("{{.Tags.Enum}}","|")
+	isConatin:=false
+	for _,v:=range tArr{
+		if v==in.{{.Name}}{
+			isConatin=true
+			break
+		}
+	}
+	if !isConatin{
+		return fmt.Errorf(strings.ToLower("{{.Name}}")+" must be one of ["+strings.Join(tArr,", ")+"]")
+	}{{end}}
+	{{if ne .Tags.Max ""}}if in.{{.Name}}>{{.Tags.Max}}{
+		return fmt.Errorf(strings.ToLower("{{.Name}}")+" must be <= {{.Tags.Max}}")
+	}{{end}}{{end}}
 	return nil
 	}
 	`))
