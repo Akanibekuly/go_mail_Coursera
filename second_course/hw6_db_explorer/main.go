@@ -31,5 +31,5 @@ func main() {
 	}
 
 	fmt.Println("starting server at :8082")
-	http.ListenAndServe(":8082", nil)
+	http.ListenAndServe(":8082", handler)
 }
