@@ -185,7 +185,7 @@ func parseQuery(r *http.Request) *getQuery {
 		query.offset, err = strconv.Atoi(offsetStr[0])
 		if err != nil {
 			log.Printf("query error: offset should be int: %s\n", err)
-			return nil
+			query.offset = 0
 		}
 	}
 
@@ -193,7 +193,7 @@ func parseQuery(r *http.Request) *getQuery {
 		query.limit, err = strconv.Atoi(limitStr[0])
 		if err != nil {
 			log.Printf("query error: limit should be int: %s\n", err)
-			return nil
+			query.limit = 5
 		}
 	}
 
@@ -554,6 +554,53 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 	w.Write(j)
 }
 
+func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
+	q := parseQuery(r)
+
+	t, exists := h.Tables[q.tableName]
+	if q.id == nil || !exists {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	var primaryKey string
+	for _, f := range t.Fields {
+		if f.IsPrimary {
+			primaryKey = f.Name
+		}
+	}
+
+	query := fmt.Sprintf("DELETE FROM %s WHERE %s = ?", q.tableName, primaryKey)
+	stm, err := h.DB.Prepare(query)
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer stm.Close()
+
+	res, err := stm.Exec(q.id)
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	count, err := res.RowsAffected()
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	j, err := json.Marshal(Response{"", map[string]interface{}{"deleted": count}})
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Write(j)
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if err := recover(); err != nil {
@@ -574,6 +621,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handlePut(w, r)
 	case "POST":
 		h.handlePost(w, r)
+	case "DELETE":
+		h.handleDelete(w, r)
 	default:
 		http.Error(w, "bad request", http.StatusBadRequest)
 	}
