@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"sort"
@@ -157,6 +158,9 @@ func parseQuery(r *http.Request) *getQuery {
 	query := &getQuery{
 		tableName: arr[1],
 		limit:     5,
+	}
+	if r.Method == "PUT" {
+		return query
 	}
 
 	switch len(arr) {
@@ -337,8 +341,217 @@ func (h *Handler) handleShow(w http.ResponseWriter, r *http.Request) {
 	w.Write(j)
 }
 
+// PUT /$table - создаёт новую запись, данный по записи в теле запроса (POST-параметры)
 func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) {
+	q := parseQuery(r)
+	t, exists := h.Tables[q.tableName]
+	if q.id != nil || !exists {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	jsonBody, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	r.Body.Close()
 
+	body := make(map[string]interface{})
+	if err = json.Unmarshal(jsonBody, &body); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var primaryKey string
+	var keys, placeholders []string
+	var values []interface{}
+	for _, f := range t.Fields {
+		if f.IsPrimary {
+			primaryKey = f.Name
+			continue
+		}
+
+		value, ok := body[f.Name]
+		if !ok {
+			if f.IsNullable {
+				value = nil
+			} else {
+				switch f.Type {
+				case "string":
+					value = ""
+				case "int":
+					value = 0
+				default:
+					http.Error(w, "unknown type", http.StatusInternalServerError)
+					return
+				}
+			}
+		} else {
+			switch value.(type) {
+			case string:
+				if f.Type == "int" {
+					invalidField(f.Name, w, r)
+					return
+				}
+			case float64:
+				if f.Type == "string" {
+					invalidField(f.Name, w, r)
+					return
+				}
+			default:
+				invalidField(f.Name, w, r)
+				return
+			}
+		}
+
+		keys = append(keys, f.Name)
+		placeholders = append(placeholders, "?")
+		values = append(values, value)
+	}
+
+	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", q.tableName, strings.Join(keys, ","), strings.Join(placeholders, ","))
+	stm, err := h.DB.Prepare(query)
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer stm.Close()
+
+	res, err := stm.Exec(values...)
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{primaryKey: id}
+	j, err := json.Marshal(Response{"", response})
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(j)
+}
+
+func invalidField(field string, w http.ResponseWriter, r *http.Request) {
+	errMsg := fmt.Sprintf("field %s have invalid type", field)
+	c := Response{errMsg, nil} // wrap in 'response'
+	j, err := json.Marshal(c)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return // ?
+	}
+
+	w.WriteHeader(http.StatusBadRequest) // 400
+	w.Write(j)                           // the content
+}
+
+// POST /$table/$id - обновляет запись, данные приходят в теле запроса (POST-параметры)
+func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
+	q := parseQuery(r)
+
+	t, exists := h.Tables[q.tableName]
+	if q.id == nil || !exists {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	jsonBody, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	r.Body.Close()
+
+	body := make(map[string]interface{})
+	if err = json.Unmarshal(jsonBody, &body); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var primaryKey string
+	var keys []string
+	var values []interface{}
+	for _, f := range t.Fields {
+		if f.IsPrimary {
+			primaryKey = f.Name
+		}
+		value, exists := body[f.Name]
+		if !exists {
+			continue
+		}
+
+		if f.IsPrimary {
+			invalidField(f.Name, w, r)
+			return
+		}
+
+		switch value.(type) {
+		case string:
+			if f.Type == "int" {
+				invalidField(f.Name, w, r)
+				return
+			}
+		case float64:
+			if f.Type == "string" {
+				invalidField(f.Name, w, r)
+				return
+			}
+		case nil:
+			if !f.IsNullable {
+				invalidField(f.Name, w, r)
+				return
+			}
+		default:
+			invalidField(f.Name, w, r)
+			return
+		}
+
+		keys = append(keys, fmt.Sprintf("%s = ?", f.Name))
+		values = append(values, value)
+	}
+
+	values = append(values, q.id)
+
+	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = ?", q.tableName, strings.Join(keys, ","), primaryKey)
+	stm, err := h.DB.Prepare(query)
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer stm.Close()
+
+	res, err := stm.Exec(values...)
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	count, err := res.RowsAffected()
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	j, err := json.Marshal(Response{"", map[string]interface{}{"updated": count}})
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(j)
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -357,6 +570,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
 		h.handleShow(w, r)
+	case "PUT":
+		h.handlePut(w, r)
+	case "POST":
+		h.handlePost(w, r)
 	default:
 		http.Error(w, "bad request", http.StatusBadRequest)
 	}
