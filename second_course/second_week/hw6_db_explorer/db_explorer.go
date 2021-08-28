@@ -126,6 +126,7 @@ func (h *Handler) getTableFields() error {
 	return nil
 }
 
+// GET / - возвращает список все таблиц (которые мы можем использовать в дальнейших запросах)
 func (h *Handler) handleTables(w http.ResponseWriter, r *http.Request) {
 	tables := make([]string, 0, len(h.Tables))
 
@@ -152,24 +153,30 @@ type getQuery struct {
 
 func parseQuery(r *http.Request) *getQuery {
 	arr := strings.Split(r.URL.Path, "/")
-	if len(arr) != 2 {
-		return nil
-	}
+
 	query := &getQuery{
 		tableName: arr[1],
 		limit:     5,
 	}
-	var err error
-	q := r.URL.Query()
-	if strID, ok := q["id"]; ok {
-		id, err := strconv.Atoi(strID[0])
+
+	switch len(arr) {
+	case 3:
+		strID := arr[2]
+		id, err := strconv.Atoi(strID)
 		query.id = &id
 		if err != nil {
 			log.Printf("query error: id should be int: %s\n", err)
 			return nil
 		}
+		return query
+	case 2:
+		break
+	default:
+		return nil
 	}
 
+	var err error
+	q := r.URL.Query()
 	if offsetStr, ok := q["offset"]; ok {
 		query.offset, err = strconv.Atoi(offsetStr[0])
 		if err != nil {
@@ -189,6 +196,8 @@ func parseQuery(r *http.Request) *getQuery {
 	return query
 }
 
+// GET /$table?limit=5&offset=7 - возвращает список из 5 записей (limit) начиная с 7-й (offset) из таблицы $table. limit по-умолчанию 5, offset 0
+// GET /$table/$id - возвращает информацию о самой записи или 404
 func (h *Handler) handleShow(w http.ResponseWriter, r *http.Request) {
 	if len(r.URL.Path) < 1 {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -221,10 +230,115 @@ func (h *Handler) handleShow(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
-		
+
 		query := fmt.Sprintf("SELECT * FROM %s WHERE %s=?", q.tableName, primaryKey)
-		h.DB.QueryRow(query, *q.id)
+		columns := make([]interface{}, len(table.Fields))
+		columnsPtr := make([]interface{}, len(columns))
+		for i := range columns {
+			columnsPtr[i] = &columns[i]
+		}
+		err := h.DB.QueryRow(query, *q.id).Scan(columnsPtr...)
+		if err != nil {
+			switch err {
+			case sql.ErrNoRows:
+				j, err := json.Marshal(Response{"record not found", nil})
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
+				w.WriteHeader(http.StatusNotFound)
+				w.Write(j)
+				return
+			default:
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+
+		record := make(map[string]interface{})
+		for i, f := range table.Fields {
+			colNmae := strings.ToLower(f.Name)
+			value := columns[i]
+			bytes, ok := columns[i].([]byte)
+			if ok {
+				value = string(bytes)
+			}
+			record[colNmae] = value
+		}
+
+		j, err := json.Marshal(Response{"", map[string]interface{}{"record": record}})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Write(j)
+		return
 	}
+
+	stm, err := h.DB.Prepare(fmt.Sprintf("SELECT * FROM %s LIMIT ?, ?", q.tableName))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer stm.Close()
+
+	rows, err := stm.Query(q.offset, q.limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	columns := make([]interface{}, len(table.Fields))
+	columnsPtr := make([]interface{}, len(columns))
+	for i := range columns {
+		columnsPtr[i] = &columns[i]
+	}
+
+	var records []map[string]interface{}
+	for rows.Next() {
+		err := rows.Scan(columnsPtr...)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		record := make(map[string]interface{})
+		for i, f := range table.Fields {
+			colName := strings.ToLower(f.Name)
+			value := columns[i]
+			columns[i] = nil
+
+			bytes, ok := value.([]byte)
+			if ok {
+				strValue := string(bytes)
+				switch f.Type {
+				case "int":
+					intValue, err := strconv.Atoi(strValue)
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+						return
+					}
+					value = intValue
+				case "string":
+					value = strValue
+				}
+			}
+			record[colName] = value
+		}
+
+		records = append(records, record)
+	}
+
+	j, err := json.Marshal(Response{"", map[string]interface{}{"records": records}})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Write(j)
+}
+
+func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) {
+
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
