@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/golang/protobuf/proto"
+	proto "google.golang.org/protobuf"
 )
 
 func main() {
